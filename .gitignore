@@ -78,11 +78,13 @@ artifacts/
 *.tmp
 *.temp
 
-# Frontend/Node.js files (since we only want C# backend)
-municipal-nextjs/
-node_modules/
-package.json
-package-lock.json
+# Frontend/Node.js files
+municipal-nextjs/node_modules/
+municipal-nextjs/.next/
+municipal-nextjs/.env.local
+municipal-nextjs/dist/
+municipal-nextjs/build/
+**/node_modules/
 
 # Test files
 test-upload.*
