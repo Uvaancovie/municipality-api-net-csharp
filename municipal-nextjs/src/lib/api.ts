@@ -346,6 +346,112 @@ class ApiClient {
       throw error;
     }
   }
+
+  // ==================== PART 2: Event Service Methods ====================
+
+  /**
+   * Get all events from EventService (uses SortedDictionary)
+   */
+  async getEventsFromService(): Promise<EventDto[]> {
+    return this.fetchWithCache<EventDto[]>(
+      `${this.baseUrl}/Events/service/all`,
+      {},
+      'events-service'
+    );
+  }
+
+  /**
+   * Search events with filters
+   */
+  async searchEvents(params: {
+    query?: string;
+    category?: string;
+    startDate?: string;
+    endDate?: string;
+  }): Promise<EventDto[]> {
+    const queryParams = new URLSearchParams();
+    if (params.query) queryParams.append('query', params.query);
+    if (params.category) queryParams.append('category', params.category);
+    if (params.startDate) queryParams.append('startDate', params.startDate);
+    if (params.endDate) queryParams.append('endDate', params.endDate);
+
+    return this.fetchWithCache<EventDto[]>(
+      `${this.baseUrl}/Events/search?${queryParams.toString()}`,
+      {},
+      `search-${queryParams.toString()}`
+    );
+  }
+
+  /**
+   * Get personalized recommendations based on search history
+   */
+  async getEventRecommendations(count: number = 5): Promise<{
+    message: string;
+    count: number;
+    events: EventDto[];
+  }> {
+    return this.fetchWithCache(
+      `${this.baseUrl}/Events/recommendations?count=${count}`,
+      {},
+      `recommendations-${count}`
+    );
+  }
+
+  /**
+   * Track search query for recommendation engine
+   */
+  async trackSearch(query: string): Promise<void> {
+    await fetch(`${this.baseUrl}/Events/track-search`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ query }),
+    });
+  }
+
+  /**
+   * Get recently viewed events (Stack - LIFO)
+   */
+  async getRecentlyViewedEvents(count: number = 5): Promise<EventDto[]> {
+    return this.fetchWithCache<EventDto[]>(
+      `${this.baseUrl}/Events/recently-viewed?count=${count}`,
+      {},
+      `recently-viewed-${count}`
+    );
+  }
+
+  /**
+   * Get upcoming events (Queue - FIFO)
+   */
+  async getUpcomingEvents(count: number = 10): Promise<EventDto[]> {
+    return this.fetchWithCache<EventDto[]>(
+      `${this.baseUrl}/Events/upcoming?count=${count}`,
+      {},
+      `upcoming-${count}`
+    );
+  }
+
+  /**
+   * Get all unique categories (HashSet)
+   */
+  async getEventCategories(): Promise<string[]> {
+    return this.fetchWithCache<string[]>(
+      `${this.baseUrl}/Events/categories`,
+      {},
+      'categories'
+    );
+  }
+
+  /**
+   * Get event by ID and track as viewed (adds to Stack)
+   */
+  async getEventFromService(id: string): Promise<EventDto> {
+    const response = await fetch(`${this.baseUrl}/Events/service/${id}`);
+    if (!response.ok) {
+      throw new Error(`Failed to get event: ${response.statusText}`);
+    }
+    return response.json();
+  }
 }
 
 export const apiClient = new ApiClient(API_BASE_URL);
+export const api = apiClient; // Export as 'api' for convenience
