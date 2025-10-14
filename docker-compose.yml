@@ -1,0 +1,29 @@
+version: '3.8'
+services:
+  backend:
+    build: .
+    container_name: municipal-backend
+    ports:
+      - "5268:5268"
+    volumes:
+      - ./municipal.db:/app/municipal.db
+    environment:
+      - ASPNETCORE_ENVIRONMENT=Development
+    depends_on:
+      - frontend
+
+  frontend:
+    build:
+      context: .
+      dockerfile: municipal-nextjs/Dockerfile
+    container_name: municipal-frontend
+    ports:
+      - "3000:3000"
+    environment:
+      - NODE_ENV=production
+    depends_on:
+      - backend
+
+networks:
+  default:
+    driver: bridge

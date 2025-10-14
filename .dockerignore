@@ -1,0 +1,15 @@
+bin
+obj
+.vs
+node_modules
+municipal-nextjs/node_modules
+*.db
+*.sqlite
+*.user
+*.suo
+*.log
+node_modules
+**/bin
+**/obj
+.git
+.vscode
