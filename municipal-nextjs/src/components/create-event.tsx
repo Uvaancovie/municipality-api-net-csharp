@@ -183,7 +183,7 @@ export function CreateEvent({ onBack, onSuccess }: CreateEventProps) {
       startsAt: formData.startsAt,
       endsAt: formData.endsAt || undefined,
       location: formData.location.trim(),
-      category: eventCategoryMap[formData.category] ?? 0, // Convert string to enum number
+      category: eventCategoryMap[formData.category] ?? eventCategoryMap['Other'] ?? 8, // Convert category name to enum number
       status: 'Published',
       maxAttendees: formData.maxAttendees ? parseInt(formData.maxAttendees) : 0,
       requiresRegistration: formData.registrationRequired,
@@ -191,6 +191,7 @@ export function CreateEvent({ onBack, onSuccess }: CreateEventProps) {
       mediaUrls: mediaUrls.length > 0 ? mediaUrls : undefined
     }
 
+    console.log('Creating event with data:', eventData); // Debug log
     createEventMutation.mutate(eventData)
   }
 
@@ -291,8 +292,8 @@ export function CreateEvent({ onBack, onSuccess }: CreateEventProps) {
                       <SelectValue placeholder="Select category" />
                     </SelectTrigger>
                     <SelectContent>
-                      {eventCategories.map((category, index) => (
-                        <SelectItem key={category} value={index.toString()}>{category}</SelectItem>
+                      {eventCategories.map((category) => (
+                        <SelectItem key={category} value={category}>{category.replace('_', ' ')}</SelectItem>
                       ))}
                     </SelectContent>
                   </Select>
