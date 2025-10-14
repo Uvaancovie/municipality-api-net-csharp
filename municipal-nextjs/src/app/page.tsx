@@ -3,40 +3,33 @@
 import { useState } from 'react'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
+import { NavBar } from '@/components/navbar'
 import { ReportIssue } from '@/components/report-issue'
 import { Events } from '@/components/events'
+import { EventsPage } from '@/components/events-page'
 import { Status } from '@/components/status'
 import { CreateEvent } from '@/components/create-event'
-import { Building2, Calendar, ClipboardList, Plus, FileText } from 'lucide-react'
+import { Calendar, ClipboardList, Plus, FileText } from 'lucide-react'
 
-type View = 'menu' | 'report' | 'events' | 'status' | 'create-event'
+type View = 'menu' | 'report' | 'events' | 'events-page' | 'status' | 'create-event'
 
 export default function HomePage() {
   const [view, setView] = useState<View>('menu')
 
-  if (view === 'report') return <ReportIssue onBack={() => setView('menu')} />
-  if (view === 'events') return <Events onBack={() => setView('menu')} />
-  if (view === 'status') return <Status onBack={() => setView('menu')} />
-  if (view === 'create-event') return <CreateEvent onBack={() => setView('menu')} />
-
   return (
     <div className="min-h-screen">
-      {/* Header */}
-      <div className="bg-white/80 backdrop-blur-sm border-b border-gray-200 sticky top-0 z-10">
-        <div className="max-w-4xl mx-auto px-6 py-4">
-          <div className="flex items-center justify-between">
-            <div className="flex items-center space-x-3">
-              <div className="w-10 h-10 bg-blue-600 rounded-lg flex items-center justify-center">
-                <Building2 className="w-6 h-6 text-white" />
-              </div>
-              <div>
-                <h1 className="text-2xl font-bold text-gray-900">eThekwini Municipal Services</h1>
-                <p className="text-sm text-gray-600">Building a better Durban together</p>
-              </div>
-            </div>
-          </div>
-        </div>
-      </div>
+      {/* Navigation Bar */}
+      <NavBar currentView={view} onNavigate={(v) => setView(v as View)} />
+
+      {/* Main Content */}
+      {view === 'report' && <ReportIssue onBack={() => setView('menu')} />}
+      {view === 'events' && <Events onBack={() => setView('menu')} />}
+      {view === 'events-page' && <EventsPage />}
+      {view === 'status' && <Status onBack={() => setView('menu')} />}
+      {view === 'create-event' && <CreateEvent onBack={() => setView('menu')} />}
+      
+      {view === 'menu' && (
+        <div>
 
       {/* Hero Section */}
       <div className="bg-gradient-to-br from-blue-50 to-indigo-100 py-16">
@@ -63,16 +56,16 @@ export default function HomePage() {
               </CardContent>
             </Card>
 
-            <Card className="cursor-pointer hover:shadow-lg transition-shadow" onClick={() => setView('events')}>
+            <Card className="cursor-pointer hover:shadow-lg transition-shadow" onClick={() => setView('events-page')}>
               <CardHeader className="text-center pb-3">
                 <div className="w-12 h-12 bg-blue-100 text-blue-600 rounded-full flex items-center justify-center mx-auto mb-3">
                   <Calendar className="w-6 h-6" />
                 </div>
-                <CardTitle className="text-lg">Events</CardTitle>
+                <CardTitle className="text-lg">Local Events</CardTitle>
               </CardHeader>
               <CardContent className="pt-0">
                 <CardDescription className="text-center">
-                  Discover community events, meetings, and municipal announcements
+                  Discover community events with smart search and personalized recommendations
                 </CardDescription>
               </CardContent>
             </Card>
@@ -140,6 +133,8 @@ export default function HomePage() {
           </p>
         </div>
       </div>
+        </div>
+      )}
     </div>
   )
 }
