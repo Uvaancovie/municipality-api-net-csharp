@@ -13,15 +13,18 @@ namespace MunicipalApi.Controllers;
 public class EventsController : ControllerBase
 {
     private readonly AppDbContext _db;
+    private readonly EventService _eventService;
     private readonly SupabaseStorageService _storageService;
     private readonly ILogger<EventsController> _logger;
 
     public EventsController(
-        AppDbContext db, 
+        AppDbContext db,
+        EventService eventService,
         SupabaseStorageService storageService,
         ILogger<EventsController> logger)
     {
         _db = db;
+        _eventService = eventService;
         _storageService = storageService;
         _logger = logger;
     }
@@ -43,11 +46,16 @@ public class EventsController : ControllerBase
                 ContactInfo = dto.ContactInfo,
                 MaxAttendees = dto.MaxAttendees,
                 RequiresRegistration = dto.RequiresRegistration,
-                Status = EventStatus.Draft
+                Status = EventStatus.Published // Set to Published so it appears in listings
             };
             
+            // Add to database
             _db.Events.Add(eventItem);
             await _db.SaveChangesAsync();
+            
+            // Add to EventService for in-memory data structures (recommendations, search, etc.)
+            _eventService.AddEvent(eventItem);
+            
             return CreatedAtAction(nameof(GetById), new { id = eventItem.Id }, eventItem);
         }
         catch (Microsoft.EntityFrameworkCore.DbUpdateException ex) when (ex.InnerException?.Message?.Contains("duplicate key") == true)
@@ -238,4 +246,174 @@ public class EventsController : ControllerBase
             return StatusCode(500, new { message = "An error occurred while deleting the event." });
         }
     }
+
+    // ==================== PART 2: Advanced Data Structures & Recommendations ====================
+
+    /// <summary>
+    /// Get all events from EventService (uses SortedDictionary for chronological ordering)
+    /// </summary>
+    [HttpGet("service/all")]
+    public ActionResult<List<EventItem>> GetAllFromService()
+    {
+        try
+        {
+            var events = _eventService.GetAllEvents();
+            return Ok(events);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error getting events from service");
+            return StatusCode(500, new { message = "Error retrieving events" });
+        }
+    }
+
+    /// <summary>
+    /// Search events with filters (uses HashSet for O(1) category lookups)
+    /// Query params: query, category, startDate, endDate
+    /// </summary>
+    [HttpGet("search")]
+    public ActionResult<List<EventItem>> Search(
+        [FromQuery] string? query = null,
+        [FromQuery] string? category = null,
+        [FromQuery] DateTime? startDate = null,
+        [FromQuery] DateTime? endDate = null)
+    {
+        try
+        {
+            var results = _eventService.SearchEvents(query, category, startDate, endDate);
+            return Ok(results);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error searching events");
+            return StatusCode(500, new { message = "Error searching events" });
+        }
+    }
+
+    /// <summary>
+    /// Get personalized recommendations based on user search history
+    /// Uses Dictionary<string, int> to analyze search patterns
+    /// </summary>
+    [HttpGet("recommendations")]
+    public ActionResult<object> GetRecommendations([FromQuery] int count = 5)
+    {
+        try
+        {
+            var recommendations = _eventService.GetRecommendations(count);
+            return Ok(new
+            {
+                message = "Based on your search history, you may like these events:",
+                count = recommendations.Count,
+                events = recommendations
+            });
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error getting recommendations");
+            return StatusCode(500, new { message = "Error generating recommendations" });
+        }
+    }
+
+    /// <summary>
+    /// Track a search query for recommendation engine
+    /// Updates Dictionary<string, int> search frequency counter
+    /// </summary>
+    [HttpPost("track-search")]
+    public ActionResult TrackSearch([FromBody] TrackSearchDto dto)
+    {
+        try
+        {
+            _eventService.TrackSearch(dto.Query);
+            return Ok(new { message = "Search tracked successfully" });
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error tracking search");
+            return StatusCode(500, new { message = "Error tracking search" });
+        }
+    }
+
+    /// <summary>
+    /// Get recently viewed events (uses Stack<Event> - LIFO)
+    /// </summary>
+    [HttpGet("recently-viewed")]
+    public ActionResult<List<EventItem>> GetRecentlyViewed([FromQuery] int count = 5)
+    {
+        try
+        {
+            var recent = _eventService.GetRecentlyViewed(count);
+            return Ok(recent);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error getting recently viewed events");
+            return StatusCode(500, new { message = "Error retrieving recently viewed events" });
+        }
+    }
+
+    /// <summary>
+    /// Get upcoming events (uses Queue<Event> - FIFO)
+    /// </summary>
+    [HttpGet("upcoming")]
+    public ActionResult<List<EventItem>> GetUpcoming([FromQuery] int count = 10)
+    {
+        try
+        {
+            var upcoming = _eventService.GetUpcomingEvents(count);
+            return Ok(upcoming);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error getting upcoming events");
+            return StatusCode(500, new { message = "Error retrieving upcoming events" });
+        }
+    }
+
+    /// <summary>
+    /// Get all unique categories (uses HashSet<string>)
+    /// </summary>
+    [HttpGet("categories")]
+    public ActionResult<List<string>> GetCategories()
+    {
+        try
+        {
+            var categories = _eventService.GetCategories();
+            return Ok(categories);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error getting categories");
+            return StatusCode(500, new { message = "Error retrieving categories" });
+        }
+    }
+
+    /// <summary>
+    /// Get event by ID and track as viewed (adds to Stack)
+    /// </summary>
+    [HttpGet("service/{id}")]
+    public ActionResult<EventItem> GetFromService(Guid id)
+    {
+        try
+        {
+            var eventItem = _eventService.GetEventById(id);
+            if (eventItem == null)
+            {
+                return NotFound(new { message = "Event not found" });
+            }
+            return Ok(eventItem);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error getting event from service");
+            return StatusCode(500, new { message = "Error retrieving event" });
+        }
+    }
+}
+
+/// <summary>
+/// DTO for tracking search queries
+/// </summary>
+public class TrackSearchDto
+{
+    public string Query { get; set; } = string.Empty;
 }
