@@ -48,7 +48,15 @@ builder.Services.AddSingleton<SupabaseStorageService>();
 builder.Services.AddScoped<DatabaseConnectionService>();
 builder.Services.AddScoped<SimpleConnectionTestService>();
 
-builder.Services.AddControllers();
+// Part 2: Register EventService as Singleton for in-memory data structures
+builder.Services.AddSingleton<EventService>();
+
+// Configure JSON serialization to use string names for enums instead of numbers
+builder.Services.AddControllers()
+    .AddJsonOptions(options =>
+    {
+        options.JsonSerializerOptions.Converters.Add(new System.Text.Json.Serialization.JsonStringEnumConverter());
+    });
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen();
 
