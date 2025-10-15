@@ -105,8 +105,7 @@ export default function HomePage() {
                   </Button>
                   <Button
                     size="lg"
-                    variant="outline"
-                    className="border-white text-white hover:bg-white hover:text-blue-600 px-8 py-4 text-lg font-semibold backdrop-blur-sm"
+                    className="bg-blue-500 text-white hover:bg-blue-400 px-8 py-4 text-lg font-semibold shadow-lg hover:shadow-xl transition-all duration-300"
                     onClick={() => setView('events-page')}
                   >
                     <Calendar className="w-5 h-5 mr-2" />
