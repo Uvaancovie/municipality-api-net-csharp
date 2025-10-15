@@ -125,36 +125,84 @@ public class EventService
     /// Get recommended events based on user's search history
     /// Analyzes search frequency dictionary to find patterns
     /// </summary>
-    public List<EventItem> GetRecommendations(int count = 5)
+    public List<EventItem> GetRecommendations(int count = 5, string? area = null)
     {
         lock (_lock)
         {
-            if (_searchFrequency.Count == 0)
+            var now = DateTime.UtcNow;
+
+            // If no search history and no area provided, fall back to upcoming queue
+            if (_searchFrequency.Count == 0 && string.IsNullOrWhiteSpace(area))
             {
-                // No search history - return upcoming events from queue
                 return _upcomingEventsQueue.Take(count).ToList();
             }
 
-            // Find most searched categories
-            var topCategories = _searchFrequency
-                .OrderByDescending(kvp => kvp.Value)
-                .Take(3)
-                .Select(kvp => kvp.Key)
-                .ToList();
+            // Collect future events as candidate pool
+            var futureEvents = GetAllEvents().Where(e => e.StartsAt >= now).ToList();
 
-            // Get events matching top searched categories
-            var recommendations = GetAllEvents()
-                .Where(e => topCategories.Any(cat => 
-                    e.Category.ToString().Contains(cat, StringComparison.OrdinalIgnoreCase) ||
-                    e.Title.Contains(cat, StringComparison.OrdinalIgnoreCase) ||
-                    e.Description.Contains(cat, StringComparison.OrdinalIgnoreCase)
-                ))
-                .Where(e => e.StartsAt >= DateTime.UtcNow) // Only future events
-                .OrderBy(e => e.StartsAt)
-                .Take(count)
-                .ToList();
+            var result = new List<EventItem>();
 
-            return recommendations;
+            // 1) If area specified, prioritize events that match the area (location/title match)
+            if (!string.IsNullOrWhiteSpace(area))
+            {
+                var a = area.Trim();
+                var areaMatches = futureEvents
+                    .Where(e => e.Location.Contains(a, StringComparison.OrdinalIgnoreCase) ||
+                                e.Title.Contains(a, StringComparison.OrdinalIgnoreCase))
+                    .OrderBy(e => e.StartsAt)
+                    .ToList();
+
+                if (areaMatches.Count > 0)
+                {
+                    result.AddRange(areaMatches);
+                    // If we already have enough, return
+                    return result.Take(count).ToList();
+                }
+                // otherwise continue but keep area in mind for prioritization
+            }
+
+            // 2) Recommend based on most-searched terms (categories/keywords)
+            if (_searchFrequency.Count > 0)
+            {
+                var topCategories = _searchFrequency
+                    .OrderByDescending(kvp => kvp.Value)
+                    .Take(3)
+                    .Select(kvp => kvp.Key)
+                    .ToList();
+
+                var analyticsMatches = futureEvents
+                    .Where(e => topCategories.Any(cat =>
+                        e.Category.ToString().Contains(cat, StringComparison.OrdinalIgnoreCase) ||
+                        e.Title.Contains(cat, StringComparison.OrdinalIgnoreCase) ||
+                        e.Description.Contains(cat, StringComparison.OrdinalIgnoreCase)
+                    ))
+                    .OrderBy(e => e.StartsAt)
+                    .ToList();
+
+                foreach (var ev in analyticsMatches)
+                {
+                    if (!result.Contains(ev)) result.Add(ev);
+                }
+            }
+
+            // 3) Fill remaining slots from future events, prioritizing area matches if provided
+            foreach (var ev in futureEvents.OrderBy(e => e.StartsAt))
+            {
+                if (result.Count >= count) break;
+                if (!result.Contains(ev))
+                {
+                    // If area provided, prefer those with location match (they'll be inserted earlier in result if match found earlier)
+                    result.Add(ev);
+                }
+            }
+
+            // 4) If still empty (very unlikely), fall back to upcoming queue
+            if (result.Count == 0)
+            {
+                result.AddRange(_upcomingEventsQueue.Where(e => e.StartsAt >= now).Take(count));
+            }
+
+            return result.Take(count).ToList();
         }
     }
 
@@ -288,31 +336,38 @@ public class EventService
     }
 
     /// <summary>
-    /// Delete event from all data structures
+    /// Get location-based recommendations combining area and category preferences
     /// </summary>
-    public bool DeleteEvent(Guid id)
+    public List<EventItem> GetLocationBasedRecommendations(int count, string location, string category = "")
     {
         lock (_lock)
         {
-            if (!_eventsById.TryGetValue(id, out var eventItem))
-            {
-                return false;
-            }
-
-            // Remove from all collections
-            _eventsById.Remove(id);
+            var allEvents = GetAllEvents();
             
-            var dateKey = eventItem.StartsAt.Date;
-            if (_eventsByDate.ContainsKey(dateKey))
+            // Filter by location (simple string matching - could be enhanced with geocoding)
+            var locationFiltered = allEvents.Where(e => 
+                e.Location.Contains(location, StringComparison.OrdinalIgnoreCase) ||
+                location.Contains(e.Location.Split(',')[0], StringComparison.OrdinalIgnoreCase)
+            ).ToList();
+            
+            // Filter by category if specified
+            if (!string.IsNullOrEmpty(category) && category != "all")
             {
-                _eventsByDate[dateKey].Remove(eventItem);
-                if (_eventsByDate[dateKey].Count == 0)
-                {
-                    _eventsByDate.Remove(dateKey);
-                }
+                locationFiltered = locationFiltered.Where(e => 
+                    e.Category.ToString().Equals(category, StringComparison.OrdinalIgnoreCase) ||
+                    e.Category.ToString().Replace("_", " ").Equals(category, StringComparison.OrdinalIgnoreCase)
+                ).ToList();
             }
-
-            return true;
+            
+            // Sort by relevance (upcoming events first, then by search frequency)
+            var sorted = locationFiltered
+                .Where(e => e.StartsAt > DateTime.UtcNow) // Only future events
+                .OrderBy(e => e.StartsAt) // Soonest first
+                .ThenByDescending(e => _searchFrequency.GetValueOrDefault(e.Title.ToLower(), 0)) // Most searched
+                .Take(count)
+                .ToList();
+                
+            return sorted;
         }
     }
 

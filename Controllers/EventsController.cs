@@ -295,11 +295,11 @@ public class EventsController : ControllerBase
     /// Uses Dictionary<string, int> to analyze search patterns
     /// </summary>
     [HttpGet("recommendations")]
-    public ActionResult<object> GetRecommendations([FromQuery] int count = 5)
+    public ActionResult<object> GetRecommendations([FromQuery] int count = 5, [FromQuery] string? area = null)
     {
         try
         {
-            var recommendations = _eventService.GetRecommendations(count);
+            var recommendations = _eventService.GetRecommendations(count, area);
             return Ok(new
             {
                 message = "Based on your search history, you may like these events:",
@@ -388,24 +388,27 @@ public class EventsController : ControllerBase
     }
 
     /// <summary>
-    /// Get event by ID and track as viewed (adds to Stack)
+    /// Get location-based recommendations combining area and category preferences
     /// </summary>
-    [HttpGet("service/{id}")]
-    public ActionResult<EventItem> GetFromService(Guid id)
+    [HttpGet("recommendations/location")]
+    public ActionResult<object> GetLocationBasedRecommendations([FromQuery] int count = 5, [FromQuery] string location = "", [FromQuery] string category = "")
     {
         try
         {
-            var eventItem = _eventService.GetEventById(id);
-            if (eventItem == null)
+            var recommendations = _eventService.GetLocationBasedRecommendations(count, location, category);
+            return Ok(new
             {
-                return NotFound(new { message = "Event not found" });
-            }
-            return Ok(eventItem);
+                message = $"Events recommended for {location}{(category != "all" ? $" in {category} category" : "")}",
+                count = recommendations.Count,
+                location = location,
+                category = category,
+                events = recommendations
+            });
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Error getting event from service");
-            return StatusCode(500, new { message = "Error retrieving event" });
+            _logger.LogError(ex, "Error getting location-based recommendations");
+            return StatusCode(500, new { message = "Error generating location-based recommendations" });
         }
     }
 }

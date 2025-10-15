@@ -397,6 +397,42 @@ class ApiClient {
     );
   }
 
+  async getEventRecommendationsByArea(count: number = 5, area?: string): Promise<{
+    message: string;
+    count: number;
+    events: EventDto[];
+  }> {
+    const qs = new URLSearchParams();
+    qs.append('count', String(count));
+    if (area) qs.append('area', area);
+    return this.fetchWithCache(
+      `${this.baseUrl}/Events/recommendations?${qs.toString()}`,
+      {},
+      `recommendations-${count}-${area ?? 'all'}`
+    );
+  }
+
+  /**
+   * Get location-based recommendations combining area and category preferences
+   */
+  async getEventRecommendationsByLocation(count: number = 5, location?: string, category?: string): Promise<{
+    message: string;
+    count: number;
+    location: string;
+    category: string;
+    events: EventDto[];
+  }> {
+    const qs = new URLSearchParams();
+    qs.append('count', String(count));
+    if (location) qs.append('location', location);
+    if (category && category !== 'all') qs.append('category', category);
+    return this.fetchWithCache(
+      `${this.baseUrl}/Events/recommendations/location?${qs.toString()}`,
+      {},
+      `recommendations-location-${count}-${location ?? 'all'}-${category ?? 'all'}`
+    );
+  }
+
   /**
    * Track search query for recommendation engine
    */

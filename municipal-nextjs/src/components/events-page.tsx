@@ -17,11 +17,18 @@ export function EventsPage() {
   const [recommendations, setRecommendations] = useState<EventItem[]>([]);
   const [recentlyViewed, setRecentlyViewed] = useState<EventItem[]>([]);
   const [categories, setCategories] = useState<string[]>([]);
+  const [locations, setLocations] = useState<string[]>([]);
   
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedCategory, setSelectedCategory] = useState<string>('all');
+  const [selectedLocation, setSelectedLocation] = useState<string>('all');
   const [sortBy, setSortBy] = useState<SortOption>('date-asc');
   const [loading, setLoading] = useState(true);
+  
+  // Location-based recommendation state
+  const [userLocation, setUserLocation] = useState('');
+  const [locationRecommendations, setLocationRecommendations] = useState<EventItem[]>([]);
+  const [locationLoading, setLocationLoading] = useState(false);
 
   // Fetch initial data
   useEffect(() => {
@@ -37,6 +44,10 @@ export function EventsPage() {
       const data = await api.getEventsFromService();
       setEvents(data);
       setFilteredEvents(data);
+      
+      // Extract unique locations from events
+      const uniqueLocations = Array.from(new Set(data.map(event => event.location))).sort();
+      setLocations(uniqueLocations);
     } catch (error) {
       console.error('Error loading events:', error);
     } finally {
@@ -71,6 +82,21 @@ export function EventsPage() {
     }
   };
 
+  const loadLocationRecommendations = async (location: string, category?: string) => {
+    if (!location.trim()) return;
+    
+    try {
+      setLocationLoading(true);
+      const result = await api.getEventRecommendationsByLocation(5, location, category);
+      setLocationRecommendations(result.events || []);
+    } catch (error) {
+      console.error('Error loading location recommendations:', error);
+      setLocationRecommendations([]);
+    } finally {
+      setLocationLoading(false);
+    }
+  };
+
   // Real-time search and filter using useMemo for performance
   const filteredAndSortedEvents = useMemo(() => {
     let results = [...events];
@@ -84,6 +110,11 @@ export function EventsPage() {
                eventCategory.replace('_', ' ') === selectedCategory ||
                selectedCategory.replace('_', ' ') === eventCategory;
       });
+    }
+
+    // Filter by location
+    if (selectedLocation !== 'all') {
+      results = results.filter(e => e.location === selectedLocation);
     }
 
     // Filter by search query
@@ -119,7 +150,7 @@ export function EventsPage() {
     });
 
     return results;
-  }, [events, searchQuery, selectedCategory, sortBy]);
+  }, [events, searchQuery, selectedCategory, selectedLocation, sortBy]);
 
   // Track search on backend for recommendations
   const handleSearch = async (query: string) => {
@@ -145,6 +176,14 @@ export function EventsPage() {
         console.error('Error tracking category:', error);
       }
     }
+    // Reload location recommendations with new category filter
+    if (userLocation.trim()) {
+      loadLocationRecommendations(userLocation, category !== 'all' ? category : undefined);
+    }
+  };
+
+  const handleLocationChange = (location: string) => {
+    setSelectedLocation(location);
   };
 
   const handleEventClick = async (eventId: string) => {
@@ -154,6 +193,66 @@ export function EventsPage() {
       loadRecentlyViewed();
     } catch (error) {
       console.error('Error tracking event view:', error);
+    }
+  };
+
+  // Get user's current location using geolocation API
+  const getCurrentLocation = () => {
+    if (!navigator.geolocation) {
+      alert('Geolocation is not supported by this browser.');
+      return;
+    }
+
+    navigator.geolocation.getCurrentPosition(
+      async (position) => {
+        const { latitude, longitude } = position.coords;
+        try {
+          // Use reverse geocoding to get location name
+          const response = await fetch(
+            `https://api.bigdatacloud.net/data/reverse-geocode-client?latitude=${latitude}&longitude=${longitude}&localityLanguage=en`
+          );
+          const data = await response.json();
+          const locationName = data.city || data.locality || `${latitude.toFixed(2)}, ${longitude.toFixed(2)}`;
+          setUserLocation(locationName);
+          loadLocationRecommendations(locationName, selectedCategory !== 'all' ? selectedCategory : undefined);
+        } catch (error) {
+          console.error('Error getting location name:', error);
+          const locationName = `${latitude.toFixed(2)}, ${longitude.toFixed(2)}`;
+          setUserLocation(locationName);
+          loadLocationRecommendations(locationName, selectedCategory !== 'all' ? selectedCategory : undefined);
+        }
+      },
+      (error) => {
+        console.error('Error getting location:', error);
+        alert('Unable to get your location. Please enter it manually.');
+      }
+    );
+  };
+
+  // Handle location input change and get recommendations
+  const handleUserLocationChange = async (location: string) => {
+    setUserLocation(location);
+    if (location.trim()) {
+      loadLocationRecommendations(location, selectedCategory !== 'all' ? selectedCategory : undefined);
+    } else {
+      setLocationRecommendations([]);
+    }
+  };
+
+  // When a user clicks a location, request area-specific recommendations and filter
+  const handleLocationClick = async (location: string) => {
+    try {
+      // Use the API to fetch recommendations scoped to the clicked location
+      const rec = await api.getEventRecommendationsByArea(5, location);
+      setRecommendations(rec.events || []);
+
+      // Optionally set the category filter to 'all' and search by the location text
+      setSelectedCategory('all');
+      setSearchQuery(location);
+      // Track the location as a search term for analytics
+      await api.trackSearch(location);
+    } catch (error) {
+      console.error('Error loading area-specific recommendations:', error);
     }
   };
 
@@ -191,7 +290,7 @@ export function EventsPage() {
       {/* Search and Filter Bar */}
       <Card className="mb-8">
         <CardContent className="pt-6">
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
             {/* Search Input */}
             <div className="relative">
               <Search className="absolute left-3 top-3 h-4 w-4 text-gray-400" />
@@ -219,6 +318,22 @@ export function EventsPage() {
               </SelectContent>
             </Select>
 
+            {/* Location Filter */}
+            <Select value={selectedLocation} onValueChange={handleLocationChange}>
+              <SelectTrigger>
+                <MapPin className="h-4 w-4 mr-2" />
+                <SelectValue placeholder="All Locations" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">All Locations</SelectItem>
+                {locations.map((location) => (
+                  <SelectItem key={location} value={location}>
+                    {location}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+
             {/* Sort Options */}
             <Select value={sortBy} onValueChange={(val) => setSortBy(val as SortOption)}>
               <SelectTrigger>
@@ -234,6 +349,33 @@ export function EventsPage() {
             </Select>
           </div>
 
+          {/* Location-Based Recommendations */}
+          <div className="mt-6 pt-6 border-t">
+            <div className="flex items-center gap-2 mb-4">
+              <MapPin className="h-5 w-5 text-blue-600" />
+              <h3 className="text-lg font-semibold">Location-Based Recommendations</h3>
+            </div>
+            <div className="flex gap-2">
+              <Input
+                placeholder="Enter your location (e.g., Durban, Phoenix, Johannesburg)"
+                value={userLocation}
+                onChange={(e) => handleUserLocationChange(e.target.value)}
+                className="flex-1"
+              />
+              <Button 
+                onClick={getCurrentLocation}
+                variant="outline"
+                className="whitespace-nowrap"
+              >
+                <MapPin className="h-4 w-4 mr-2" />
+                Use My Location
+              </Button>
+            </div>
+            <p className="text-sm text-gray-600 mt-2">
+              Get personalized event recommendations based on your location and preferences
+            </p>
+          </div>
+
           {/* Active Filters Display */}
           <div className="flex gap-2 mt-4 flex-wrap">
             {searchQuery && (
@@ -246,6 +388,18 @@ export function EventsPage() {
               <span className="px-3 py-1 bg-green-100 text-green-700 rounded-full text-sm flex items-center gap-1">
                 Category: {selectedCategory}
                 <button onClick={() => handleCategoryChange('all')} className="hover:text-green-900">×</button>
+              </span>
+            )}
+            {selectedLocation !== 'all' && (
+              <span className="px-3 py-1 bg-orange-100 text-orange-700 rounded-full text-sm flex items-center gap-1">
+                Location: {selectedLocation}
+                <button onClick={() => handleLocationChange('all')} className="hover:text-orange-900">×</button>
+              </span>
+            )}
+            {userLocation && (
+              <span className="px-3 py-1 bg-purple-100 text-purple-700 rounded-full text-sm flex items-center gap-1">
+                Location: {userLocation}
+                <button onClick={() => handleUserLocationChange('')} className="hover:text-purple-900">×</button>
               </span>
             )}
           </div>
@@ -290,7 +444,13 @@ export function EventsPage() {
                 
                 <div className="flex items-center gap-2">
                   <MapPin className="h-4 w-4" />
-                  <span>{event.location}</span>
+                  <button
+                    onClick={() => handleLocationClick(event.location)}
+                    className="text-blue-600 underline text-left hover:text-blue-800"
+                    title={`View events near ${event.location}`}
+                  >
+                    {event.location}
+                  </button>
                 </div>
                 
                 {event.maxAttendees > 0 && (
@@ -324,12 +484,57 @@ export function EventsPage() {
           <Button 
             onClick={() => { 
               setSearchQuery(''); 
-              setSelectedCategory('all'); 
+              setSelectedCategory('all');
+              setSelectedLocation('all');
             }} 
             className="mt-4"
           >
             Clear Filters
           </Button>
+        </div>
+      )}
+
+      {/* Location-Based Recommendations */}
+      {locationRecommendations.length > 0 && (
+        <div className="mt-12">
+          <Card>
+            <CardHeader>
+              <div className="flex items-center gap-2">
+                <MapPin className="h-5 w-5 text-purple-600" />
+                <CardTitle>Recommended for {userLocation}</CardTitle>
+              </div>
+              <p className="text-sm text-gray-600">
+                Events near {userLocation} {selectedCategory !== 'all' ? `in ${selectedCategory} category` : ''}
+                {locationLoading && <span className="ml-2 text-blue-600">Loading...</span>}
+              </p>
+            </CardHeader>
+            <CardContent>
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                {locationRecommendations.map((event) => (
+                  <div
+                    key={event.id}
+                    className="p-4 border rounded-lg hover:bg-gray-50 cursor-pointer transition-colors"
+                    onClick={() => handleEventClick(event.id)}
+                  >
+                    <div className="flex justify-between items-start mb-2">
+                      <span className="text-xs font-medium text-purple-600">
+                        {typeof event.category === 'string' ? event.category.replace('_', ' ') : event.category}
+                      </span>
+                      <span className="text-xs text-gray-500">
+                        {new Date(event.startsAt).toLocaleDateString()}
+                      </span>
+                    </div>
+                    <h4 className="font-semibold mb-1">{event.title}</h4>
+                    <p className="text-sm text-gray-600 line-clamp-2">{event.description}</p>
+                    <div className="flex items-center gap-1 mt-2 text-xs text-gray-500">
+                      <MapPin className="h-3 w-3" />
+                      <span>{event.location}</span>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </CardContent>
+          </Card>
         </div>
       )}
 
