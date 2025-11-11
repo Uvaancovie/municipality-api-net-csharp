@@ -24,9 +24,13 @@ if (databaseProvider.Equals("SQLite", StringComparison.OrdinalIgnoreCase))
 }
 else
 {
+    // Get connection string from DATABASE_URL environment variable (Render) or fallback to appsettings
+    var connectionString = builder.Configuration.GetValue<string>("DATABASE_URL") 
+        ?? builder.Configuration.GetConnectionString("DefaultConnection");
+    
     builder.Services.AddDbContext<AppDbContext>(options =>
         options.UseNpgsql(
-            builder.Configuration.GetConnectionString("DefaultConnection"),
+            connectionString,
             npgsqlOptions =>
             {
                 npgsqlOptions.EnableRetryOnFailure(
