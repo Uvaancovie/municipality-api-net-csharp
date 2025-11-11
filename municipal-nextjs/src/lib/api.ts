@@ -2,6 +2,14 @@
 const API_BASE_URL = process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost:5268/api';
 
 // Updated types for simplified API (no authentication)
+export interface Message {
+  id: string;
+  message: string;
+  isFromAdmin: boolean;
+  senderName: string;
+  createdAt: string;
+}
+
 export interface Issue {
   id: string;
   title: string;
@@ -12,6 +20,7 @@ export interface Issue {
   status: 'Submitted' | 'InProgress' | 'Resolved' | 'Closed';
   createdAt: string;
   updatedAt?: string;
+  messages: Message[];
 }
 
 export interface IssueDto {

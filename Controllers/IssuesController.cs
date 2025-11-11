@@ -13,12 +13,12 @@ namespace MunicipalApi.Controllers;
 public class IssuesController : ControllerBase
 {
     private readonly AppDbContext _db;
-    private readonly SupabaseStorageService _storageService;
+    private readonly CloudinaryStorageService _storageService;
     private readonly ILogger<IssuesController> _logger;
 
     public IssuesController(
         AppDbContext db, 
-        SupabaseStorageService storageService,
+        CloudinaryStorageService storageService,
         ILogger<IssuesController> logger)
     {
         _db = db;
@@ -83,13 +83,41 @@ public class IssuesController : ControllerBase
     }
 
     [HttpGet("{id:guid}")]
-    public async Task<ActionResult<Issue>> GetById(Guid id)
+    public async Task<ActionResult<IssueWithMessagesDto>> GetById(Guid id)
     {
         var issue = await _db.Issues.FirstOrDefaultAsync(i => i.Id == id);
             
         if (issue is null) return NotFound();
+
+        // Get messages for this issue
+        var messages = await _db.IssueMessages
+            .Where(m => m.IssueId == id)
+            .OrderBy(m => m.CreatedAt)
+            .Select(m => new MessageDto
+            {
+                Id = m.Id,
+                Message = m.Message,
+                IsFromAdmin = m.IsFromAdmin,
+                SenderName = m.SenderName,
+                CreatedAt = m.CreatedAt
+            })
+            .ToListAsync();
+
+        var response = new IssueWithMessagesDto
+        {
+            Id = issue.Id,
+            Title = issue.Title,
+            Description = issue.Description,
+            Location = issue.Location,
+            Category = issue.Category,
+            MediaUrls = issue.MediaUrls,
+            Status = issue.Status,
+            CreatedAt = issue.CreatedAt,
+            UpdatedAt = issue.UpdatedAt,
+            Messages = messages
+        };
         
-        return Ok(issue);
+        return Ok(response);
     }
 
     [HttpGet]

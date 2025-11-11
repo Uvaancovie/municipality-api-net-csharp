@@ -1,8 +1,9 @@
 'use client';
 
 import { useState } from 'react';
-import { Building2, Menu, X, Calendar, FileText, AlertCircle, Plus, Home } from 'lucide-react';
+import { Building2, Menu, X, Calendar, FileText, AlertCircle, Plus, Home, Shield } from 'lucide-react';
 import { Button } from '@/components/ui/button';
+import { useRouter } from 'next/navigation';
 
 interface NavBarProps {
   currentView?: string;
@@ -11,6 +12,7 @@ interface NavBarProps {
 
 export function NavBar({ currentView = 'menu', onNavigate }: NavBarProps) {
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+  const router = useRouter();
 
   const navItems = [
     { id: 'menu', label: 'Home', icon: Home },
@@ -69,6 +71,14 @@ export function NavBar({ currentView = 'menu', onNavigate }: NavBarProps) {
                 </Button>
               );
             })}
+            <Button
+              variant="ghost"
+              onClick={() => router.push('/admin/login')}
+              className="flex items-center gap-2 text-gray-700 hover:bg-gray-100 ml-2"
+            >
+              <Shield className="h-4 w-4" />
+              <span>Admin</span>
+            </Button>
           </div>
 
           {/* Mobile Menu Button */}

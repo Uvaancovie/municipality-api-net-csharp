@@ -1,6 +1,6 @@
 'use client'
 
-import { useState } from 'react'
+import { useMemo, useState, useEffect } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -8,7 +8,13 @@ import { Label } from '@/components/ui/label'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { LoadingProgress, CardSkeleton } from '@/components/loading-progress'
 import { apiClient, type Issue, issueStatuses, issueCategories } from '@/lib/api'
-import { ArrowLeft, Search, Filter, RefreshCw, AlertCircle, ExternalLink, X, Eye, ZoomIn } from 'lucide-react'
+import { ArrowLeft, Search, Filter, RefreshCw, AlertCircle, ExternalLink, X, ZoomIn, MessageSquare } from 'lucide-react'
+
+const SUPABASE_URL = (process.env.NEXT_PUBLIC_SUPABASE_URL ?? '').replace(/\/$/, '')
+const SUPABASE_BUCKET = process.env.NEXT_PUBLIC_SUPABASE_BUCKET ?? 'issues-media'
+const SUPABASE_PUBLIC_PREFIX = SUPABASE_URL
+  ? `${SUPABASE_URL}/storage/v1/object/public/${SUPABASE_BUCKET}`
+  : ''
 
 interface StatusProps {
   onBack: () => void
@@ -19,6 +25,7 @@ export function Status({ onBack }: StatusProps) {
   const [selectedCategory, setSelectedCategory] = useState<string>('')
   const [searchId, setSearchId] = useState('')
   const [selectedImage, setSelectedImage] = useState<string | null>(null)
+  const [lastUpdateTime, setLastUpdateTime] = useState<Date>(new Date())
 
   // Use React Query for data fetching with automatic caching
   const {
@@ -29,9 +36,17 @@ export function Status({ onBack }: StatusProps) {
   } = useQuery({
     queryKey: ['issues', selectedStatus, selectedCategory],
     queryFn: () => apiClient.getIssues(selectedStatus || undefined, selectedCategory || undefined),
-    staleTime: 30000, // 30 seconds
-    refetchOnWindowFocus: false,
+    staleTime: 5000, // Consider data stale after 5 seconds
+    refetchInterval: 10000, // Auto-refetch every 10 seconds
+    refetchOnWindowFocus: true,
   })
+
+  // Update last refresh time when data changes
+  useEffect(() => {
+    if (issues.length > 0) {
+      setLastUpdateTime(new Date())
+    }
+  }, [issues])
 
   const clearFilters = () => {
     setSelectedStatus('')
@@ -74,6 +89,41 @@ export function Status({ onBack }: StatusProps) {
     }
   }
 
+  const resolveMediaUrl = (url: string) => {
+    if (!url) return ''
+
+    const trimmed = url.trim()
+    if (/^https?:\/\//i.test(trimmed)) {
+      return trimmed
+    }
+
+    if (!SUPABASE_PUBLIC_PREFIX) {
+      return trimmed
+    }
+
+    const sanitized = trimmed.startsWith('/') ? trimmed.slice(1) : trimmed
+
+    // If the path already contains the public prefix structure, rebuild relative to the base URL
+    if (sanitized.startsWith('storage/v1/object/public/')) {
+      return `${SUPABASE_URL}/${sanitized}`
+    }
+
+    const [pathPart, queryPart] = sanitized.split('?')
+    let path = pathPart
+
+    if (path.startsWith(`${SUPABASE_BUCKET}/`)) {
+      path = path.slice(`${SUPABASE_BUCKET}/`.length)
+    }
+
+    if (!path.includes('/')) {
+      path = `issues/${path}`
+    }
+
+    const query = queryPart ? `?${queryPart}` : ''
+
+    return `${SUPABASE_PUBLIC_PREFIX}/${path}${query}`
+  }
+
   // Filter issues based on search
   let filteredIssues = issues
   if (searchId.trim()) {
@@ -83,6 +133,15 @@ export function Status({ onBack }: StatusProps) {
       issue.description.toLowerCase().includes(searchId.toLowerCase())
     )
   }
+
+  const summaryStats = useMemo(() => {
+    return {
+      total: issues.length,
+      submitted: issues.filter(i => i.status === 'Submitted').length,
+      inProgress: issues.filter(i => i.status === 'InProgress').length,
+      resolved: issues.filter(i => i.status === 'Resolved').length,
+    }
+  }, [issues])
 
   return (
     <div className="min-h-screen bg-gray-50">
@@ -99,19 +158,54 @@ export function Status({ onBack }: StatusProps) {
                 <p className="text-sm text-gray-600">Track your service requests and issues</p>
               </div>
             </div>
-            <Button variant="outline" onClick={() => loadIssues()} disabled={loading}>
-              <RefreshCw className={`w-4 h-4 mr-2 ${loading ? 'animate-spin' : ''}`} />
-              Refresh
-            </Button>
           </div>
         </div>
         <LoadingProgress isLoading={loading} className="h-1" />
       </div>
 
       {/* Content */}
-      <div className="max-w-4xl mx-auto px-6 py-8">
-        {/* Filters */}
-        <Card className="mb-6">
+      <div className="max-w-4xl mx-auto px-6 py-8 space-y-6">
+        {/* Summary Stats */}
+        <Card className="bg-white/80 border border-blue-100 shadow-sm">
+          <CardContent className="pt-6">
+            <div className="flex items-center justify-between mb-4">
+              <div>
+                <CardTitle className="text-lg">Service Request Analytics</CardTitle>
+                <CardDescription>
+                  Overview of current activity across all service requests
+                  <span className="ml-2 text-xs text-gray-500">
+                    • Last updated: {lastUpdateTime.toLocaleTimeString()}
+                  </span>
+                </CardDescription>
+              </div>
+              <Button variant="ghost" size="sm" onClick={() => loadIssues()} disabled={loading}>
+                <RefreshCw className={`w-4 h-4 mr-2 ${loading ? 'animate-spin' : ''}`} />
+                Refresh
+              </Button>
+            </div>
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+              <div className="rounded-xl bg-blue-50 p-4 text-center">
+                <div className="text-sm font-medium text-blue-600 mb-1">Total</div>
+                <div className="text-2xl font-bold text-blue-700">{summaryStats.total}</div>
+              </div>
+              <div className="rounded-xl bg-indigo-50 p-4 text-center">
+                <div className="text-sm font-medium text-indigo-600 mb-1">Submitted</div>
+                <div className="text-2xl font-bold text-indigo-700">{summaryStats.submitted}</div>
+              </div>
+              <div className="rounded-xl bg-yellow-50 p-4 text-center">
+                <div className="text-sm font-medium text-yellow-600 mb-1">In Progress</div>
+                <div className="text-2xl font-bold text-yellow-700">{summaryStats.inProgress}</div>
+              </div>
+              <div className="rounded-xl bg-green-50 p-4 text-center">
+                <div className="text-sm font-medium text-green-600 mb-1">Resolved</div>
+                <div className="text-2xl font-bold text-green-700">{summaryStats.resolved}</div>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+
+    {/* Filters */}
+    <Card>
           <CardHeader>
             <CardTitle className="flex items-center space-x-2">
               <Filter className="w-5 h-5" />
@@ -224,12 +318,25 @@ export function Status({ onBack }: StatusProps) {
               </Card>
             ) : (
               <>
-                {filteredIssues.map((issue) => (
-                  <Card key={issue.id} className="hover:shadow-md transition-shadow">
+                {filteredIssues.map((issue) => {
+                  const hasNewMessages = issue.messages && issue.messages.filter(m => m.isFromAdmin).length > 0
+                  const recentAdminMessages = issue.messages?.filter(m => m.isFromAdmin).slice(-1)[0]
+                  const isRecentUpdate = issue.updatedAt && new Date(issue.updatedAt) > new Date(Date.now() - 24 * 60 * 60 * 1000) // Last 24 hours
+                  
+                  return (
+                  <Card key={issue.id} className={`hover:shadow-md transition-shadow ${hasNewMessages && isRecentUpdate ? 'border-blue-300 border-2' : ''}`}>
                     <CardHeader>
                       <div className="flex items-start justify-between">
                         <div className="flex-1">
-                          <CardTitle className="text-lg mb-2">{issue.title}</CardTitle>
+                          <div className="flex items-center space-x-2 mb-2">
+                            <CardTitle className="text-lg">{issue.title}</CardTitle>
+                            {hasNewMessages && isRecentUpdate && (
+                              <span className="inline-flex items-center px-2 py-1 rounded-full text-xs font-semibold bg-blue-100 text-blue-800 animate-pulse">
+                                <MessageSquare className="w-3 h-3 mr-1" />
+                                New Update
+                              </span>
+                            )}
+                          </div>
                           <div className="flex items-center space-x-4 text-sm text-gray-600">
                             <div className="flex items-center space-x-1">
                               <span className="font-medium">ID:</span>
@@ -259,18 +366,19 @@ export function Status({ onBack }: StatusProps) {
                           <p className="text-sm font-medium text-gray-700 mb-2">Attachments:</p>
                           <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3">
                             {issue.mediaUrls.map((url, index) => {
-                              const isImage = isImageUrl(url)
-                              const fileName = getFileNameFromUrl(url)
-                              
+                              const resolvedUrl = resolveMediaUrl(url)
+                              const isImage = isImageUrl(resolvedUrl || url)
+                              const fileName = getFileNameFromUrl(resolvedUrl || url)
+
                               if (isImage) {
                                 return (
                                   <div key={index} className="relative group">
                                     <div 
                                       className="aspect-square bg-gray-100 rounded-lg overflow-hidden cursor-pointer hover:shadow-md transition-shadow"
-                                      onClick={() => setSelectedImage(url)}
+                                      onClick={() => setSelectedImage(resolvedUrl || url)}
                                     >
                                       <img
-                                        src={url}
+                                        src={resolvedUrl || url}
                                         alt={`Attachment ${index + 1}`}
                                         className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-200"
                                         onError={(e) => {
@@ -297,7 +405,7 @@ export function Status({ onBack }: StatusProps) {
                                 return (
                                   <a
                                     key={index}
-                                    href={url}
+                                    href={resolvedUrl || url}
                                     target="_blank"
                                     rel="noopener noreferrer"
                                     className="flex flex-col items-center p-3 border-2 border-dashed border-gray-300 rounded-lg hover:border-blue-400 hover:bg-blue-50 transition-colors"
@@ -314,6 +422,42 @@ export function Status({ onBack }: StatusProps) {
                         </div>
                       )}
 
+                      {/* Admin Messages */}
+                      {issue.messages && issue.messages.length > 0 && (
+                        <div className="mb-4 bg-blue-50 border border-blue-200 rounded-lg p-4">
+                          <div className="flex items-center space-x-2 mb-3">
+                            <MessageSquare className="w-4 h-4 text-blue-600" />
+                            <h4 className="font-semibold text-blue-900">Updates from Admin</h4>
+                          </div>
+                          <div className="space-y-2">
+                            {issue.messages
+                              .filter(msg => msg.isFromAdmin)
+                              .slice(-3) // Show last 3 admin messages
+                              .map((msg) => (
+                                <div key={msg.id} className="bg-white rounded-lg p-3 border border-blue-100">
+                                  <div className="flex items-start justify-between mb-1">
+                                    <span className="text-xs font-semibold text-blue-700">{msg.senderName}</span>
+                                    <span className="text-xs text-gray-500">
+                                      {new Date(msg.createdAt).toLocaleDateString('en-ZA', {
+                                        month: 'short',
+                                        day: 'numeric',
+                                        hour: '2-digit',
+                                        minute: '2-digit'
+                                      })}
+                                    </span>
+                                  </div>
+                                  <p className="text-sm text-gray-800">{msg.message}</p>
+                                </div>
+                              ))}
+                          </div>
+                          {issue.messages.filter(msg => msg.isFromAdmin).length > 3 && (
+                            <p className="text-xs text-blue-600 mt-2">
+                              + {issue.messages.filter(msg => msg.isFromAdmin).length - 3} more messages
+                            </p>
+                          )}
+                        </div>
+                      )}
+
                       <div className="flex items-center justify-between text-sm text-gray-500 pt-4 border-t">
                         <div className="flex items-center space-x-1">
                           <span>📍</span>
@@ -325,43 +469,9 @@ export function Status({ onBack }: StatusProps) {
                       </div>
                     </CardContent>
                   </Card>
-                ))}
+                )
+                })}
 
-                {/* Summary Stats */}
-                <Card className="mt-8">
-                  <CardHeader>
-                    <CardTitle>Summary</CardTitle>
-                    <CardDescription>Overview of all service requests</CardDescription>
-                  </CardHeader>
-                  <CardContent>
-                    <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-center">
-                      <div>
-                        <div className="text-2xl font-bold text-blue-600">
-                          {issues.length}
-                        </div>
-                        <div className="text-sm text-gray-600">Total</div>
-                      </div>
-                      <div>
-                        <div className="text-2xl font-bold text-blue-600">
-                          {issues.filter(i => i.status === 'Submitted').length}
-                        </div>
-                        <div className="text-sm text-gray-600">Submitted</div>
-                      </div>
-                      <div>
-                        <div className="text-2xl font-bold text-yellow-600">
-                          {issues.filter(i => i.status === 'InProgress').length}
-                        </div>
-                        <div className="text-sm text-gray-600">In Progress</div>
-                      </div>
-                      <div>
-                        <div className="text-2xl font-bold text-green-600">
-                          {issues.filter(i => i.status === 'Resolved').length}
-                        </div>
-                        <div className="text-sm text-gray-600">Resolved</div>
-                      </div>
-                    </div>
-                  </CardContent>
-                </Card>
               </>
             )}
           </div>
