@@ -152,6 +152,10 @@ using (var scope = app.Services.CreateScope())
     // Ensure default admin exists
     var authService = scope.ServiceProvider.GetRequiredService<AdminAuthService>();
     await authService.EnsureDefaultAdminExists();
+    
+    // Seed database with test data
+    var seeder = new DatabaseSeeder(db, scope.ServiceProvider.GetRequiredService<ILogger<DatabaseSeeder>>());
+    await seeder.SeedAsync();
 }
 
 app.UseCors("allow_frontend");
