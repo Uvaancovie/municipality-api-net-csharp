@@ -2,10 +2,11 @@ services:
   - type: web
     name: municipal-api
     runtime: docker
-    region: frankfurt   # closest region
+    region: frankfurt
     plan: free
     branch: main
-    dockerfilePath: ./Dockerfile
+    rootDir: .
+    dockerfilePath: Dockerfile
     healthCheckPath: /health
     envVars:
       - key: ASPNETCORE_ENVIRONMENT
