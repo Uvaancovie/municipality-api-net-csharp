@@ -103,10 +103,31 @@ builder.Services.AddHealthChecks()
     .AddNpgSql(builder.Configuration.GetConnectionString("DefaultConnection")!, name: "database");
 builder.Services.AddCors(opt =>
 {
-    opt.AddPolicy("allow_frontend", p => p
-        .WithOrigins("http://localhost:5173", "http://localhost:3000") // Vite dev and Next.js dev
+    opt.AddPolicy("allow_frontend", p =>
+    {
+        p.SetIsOriginAllowed(origin =>
+        {
+            if (string.IsNullOrWhiteSpace(origin))
+            {
+                return false;
+            }
+
+            if (origin.StartsWith("http://localhost", StringComparison.OrdinalIgnoreCase))
+            {
+                return true;
+            }
+
+            if (Uri.TryCreate(origin, UriKind.Absolute, out var uri))
+            {
+                return uri.Host.Equals("municipality-frontend-orpin.vercel.app", StringComparison.OrdinalIgnoreCase)
+                    || uri.Host.EndsWith(".vercel.app", StringComparison.OrdinalIgnoreCase);
+            }
+
+            return false;
+        })
         .AllowAnyHeader()
-        .AllowAnyMethod());
+        .AllowAnyMethod();
+    });
 });
 
 var app = builder.Build();
