@@ -79,6 +79,7 @@ artifacts/
 *.temp
 
 # Frontend/Node.js files
+municipal-nextjs/
 municipal-nextjs/node_modules/
 municipal-nextjs/.next/
 municipal-nextjs/.env.local
