@@ -132,9 +132,24 @@ builder.Services.AddCors(opt =>
 
 var app = builder.Build();
 
-// Ensure default admin exists
+// Ensure database is created and migrations are applied
 using (var scope = app.Services.CreateScope())
 {
+    var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+    var logger = scope.ServiceProvider.GetRequiredService<ILogger<Program>>();
+    
+    try
+    {
+        logger.LogInformation("Ensuring database is created and up to date...");
+        await db.Database.MigrateAsync();
+        logger.LogInformation("Database migrations applied successfully");
+    }
+    catch (Exception ex)
+    {
+        logger.LogError(ex, "Error applying database migrations");
+    }
+    
+    // Ensure default admin exists
     var authService = scope.ServiceProvider.GetRequiredService<AdminAuthService>();
     await authService.EnsureDefaultAdminExists();
 }

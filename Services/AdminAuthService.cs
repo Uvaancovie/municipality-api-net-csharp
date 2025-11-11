@@ -40,19 +40,23 @@ public class AdminAuthService
     {
         try
         {
+            _logger.LogInformation("Login attempt for email: {Email}", loginDto.Email);
+            
             var admin = await _db.Admins
                 .FirstOrDefaultAsync(a => a.Email == loginDto.Email);
 
             if (admin == null)
             {
-                _logger.LogWarning($"Admin login failed: Email not found - {loginDto.Email}");
+                _logger.LogWarning("Admin login failed: Email not found - {Email}", loginDto.Email);
                 return null;
             }
 
+            _logger.LogInformation("Admin found. Verifying password...");
+            
             // Verify password
             if (!VerifyPassword(loginDto.Password, admin.PasswordHash))
             {
-                _logger.LogWarning($"Admin login failed: Invalid password for {loginDto.Email}");
+                _logger.LogWarning("Admin login failed: Invalid password for {Email}", loginDto.Email);
                 return null;
             }
 
@@ -64,7 +68,7 @@ public class AdminAuthService
             var token = GenerateJwtToken(admin);
             var expiresAt = DateTime.UtcNow.AddMinutes(_jwtConfig.ExpiryMinutes);
 
-            _logger.LogInformation($"Admin logged in successfully: {admin.Email}");
+            _logger.LogInformation("✅ Admin logged in successfully: {Email}", admin.Email);
 
             return new AdminLoginResponse
             {
@@ -123,9 +127,12 @@ public class AdminAuthService
     {
         try
         {
+            _logger.LogInformation("Checking if admin account exists...");
             var adminExists = await _db.Admins.AnyAsync();
+            
             if (!adminExists)
             {
+                _logger.LogInformation("No admin found. Creating default admin account...");
                 var defaultAdmin = new Admin
                 {
                     Email = "way2flyagency@gmail.com",
@@ -137,14 +144,16 @@ public class AdminAuthService
                 _db.Admins.Add(defaultAdmin);
                 await _db.SaveChangesAsync();
                 
-                _logger.LogInformation("Default admin account created successfully");
+                _logger.LogInformation("✅ Default admin account created successfully: {Email}", defaultAdmin.Email);
                 return true;
             }
+            
+            _logger.LogInformation("Admin account already exists");
             return false;
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Error creating default admin");
+            _logger.LogError(ex, "❌ Error creating default admin");
             return false;
         }
     }
